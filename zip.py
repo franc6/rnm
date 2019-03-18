@@ -34,4 +34,3 @@ with zipfile.ZipFile(zfile,'w') as Z:
         dest_file = os.path.join(build,file)
         Z.write(dest_file)
 
-shutil.copy(zfile,'../..')
