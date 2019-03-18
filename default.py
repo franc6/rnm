@@ -44,7 +44,7 @@ class SessionRequests():
         if params is None:
         #log(url)
         #log(str(HEADERS))
-            raw_reply = self.session.get(str(url), headers=headers,cookies = self.session.cookies)
+            raw_reply = self.session.get(url, headers=headers,cookies = self.session.cookies)
         else:
             if raw:
                 raw_reply = self.session.post(url, params, headers)
@@ -56,7 +56,12 @@ class SessionRequests():
             if raw_reply.status_code == 401:
                 error("401", "email or password incorrect")
         if not (raw_reply.status_code == 200 or raw_reply.status_code == 302):
-            log('URL ' + url + ' returned status code ' + str(raw_reply.status_code) + ':' + raw_reply.content.encode('utf-8').strip())
+            log('URL '
+                + url
+                + ' returned status code '
+                + str(raw_reply.status_code)
+                + ':'
+                + raw_reply.content.strip())
             for k in sorted(raw_reply.headers):
                 log(k + ":" + raw_reply.headers[k])
             return None
@@ -141,7 +146,6 @@ sessionInstance = SessionRequests()
 HEADERS = {'Content-type': 'application/json; charset=utf-8',
            'Connection': 'Keep-Alive',
            'Accept-Encoding': 'gzip',
-           'Host': 'api.rightnow.org',
            'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 6.0.1)',
            'Accept': 'application/vnd.rnapi.v4+json'}
 
@@ -149,7 +153,6 @@ HEADERSFORWEB = {
 
     'User-Agent' :  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:52.0) Gecko/20100101 Firefox/52.0',
     'Connection': 'Close',
-    'Host' :'www.rightnowmedia.org',
     'Accept-Encoding' : 'gzip,deflate,br',
     'Accept' :'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
 }
@@ -328,7 +331,6 @@ def play_web_session(url_from_search, content_id_from_search):
         "x-requested-with":"XMLHttpRequest",
         "Connection":"keep-alive",
         "Accept":"*/*",
-        'Host' :'www.rightnowmedia.org',
         'Referer' : url_from_search,
     }
     sessionInstance.readCookie()
@@ -412,6 +414,10 @@ def parseLoginValidationResponse(page):
     result = re.search('<input name=\"__RequestVerificationToken\" type=\"hidden\" value=\"(.*?)\"\ />',page.encode('utf-8').strip())
     return result.group(1)
 
+def parseLoginReturnUrl(page):
+    result = re.search('name=\"ViewModelReturnUrl\"\ value=\"(.*?)\"',page.encode('utf-8').strip())
+    return result.group(1)
+
 # Authenticate for logging intot he UI via FireFox Webinterface
 
 def authenticate_web():
@@ -428,9 +434,11 @@ def authenticate_web():
         return False
     getRawLoginPageResponse = sessionInstance.makeRequest(url_web_login,None,True,HEADERSFORWEB)
     verificationKey = str(parseLoginValidationResponse(getRawLoginPageResponse.text))
+    viewModelReturnUrl = str(parseLoginReturnUrl(getRawLoginPageResponse.text))
     object = { "UserName" : user,
                 "Password" : pswd,
                "__RequestVerificationToken" :verificationKey,
+               "ViewModelReturnUrl" :viewModelReturnUrl,
                "RememberMe" :"false"
     }
     cookies = {
