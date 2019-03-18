@@ -58,8 +58,3 @@ TODO
   (Christian Living -> Answers in Theology - The Gospel Coalition -> Should Christians Tithe 186221, ContentTypeID 2)
   I think these are only available through the website.
 
-
-Irony
------
-
-My internet connection speed is so poor, most of the time I can't stream the content without frequent pauses!
