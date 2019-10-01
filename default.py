@@ -42,8 +42,8 @@ class SessionRequests():
 
     def makeRequest(self,url, params=None, raw=False, headers = None):
         if params is None:
-        #log(url)
-        #log(str(HEADERS))
+            #log(url)
+            #log(str(HEADERS))
             raw_reply = self.session.get(url, headers=headers,cookies = self.session.cookies)
         else:
             if raw:
@@ -79,10 +79,12 @@ class SessionRequests():
         return reply
 
 class SearchHTMLScraper(HTMLParser):
-    RESET = 3
-    TITLE_FOUND = 1
-    RESULT_FOUND = 2
-    FOUND_URL = 3
+    CATEGORY_FOUND = 1
+    TITLE_FOUND = 2
+    URL_FOUND = 3
+    SPEAKER_FOUND = 4
+    RESULT_FOUND = 5
+    RESET = 6
     RESULT_LOOKING = 0
     text_found = RESULT_LOOKING
 
@@ -93,9 +95,9 @@ class SearchHTMLScraper(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         stringAttributes = json.dumps(attrs)
-        if str(tag).strip() == "h1":
+        if str(tag).strip() == "h1" and self.text_found == self.RESULT_LOOKING:
             if "LibraryChannelTitle" in stringAttributes:
-                self.text_found=self.TITLE_FOUND
+                self.text_found=self.CATEGORY_FOUND
         if str(tag).strip() == "a":
             if "content-wrapper" in stringAttributes:
                 for name,value in attrs:
@@ -103,12 +105,22 @@ class SearchHTMLScraper(HTMLParser):
                         self.item_result={}
                         self.item_result['result'] = {}
                         self.item_result['result']['url'] = value
+                        self.text_found = self.URL_FOUND
+            elif self.text_found == self.SPEAKER_FOUND:
+                self.text_found=self.RESULT_FOUND
+        if str(tag).strip() == "img" and self.text_found == self.URL_FOUND:
+            if "cover-image" in stringAttributes:
+                for name,value in attrs:
+                    if name == "src":
+                        self.item_result['result']['ImgUrl'] = value
 
         if str(tag).strip() == "div":
             if "content-title" in stringAttributes:
-                self.text_found=self.RESULT_FOUND
+                self.text_found=self.TITLE_FOUND
+            if "content-speaker" in stringAttributes:
+                self.text_found=self.SPEAKER_FOUND
         if str(tag).strip() == "hr":
-            if self.text_found == self.RESULT_LOOKING and "ChannelSeparator" in stringAttributes:
+            if self.text_found == self.RESULT_LOOKING:
                 self.text_found = self.RESET
 
     def get_menu_options(self):
@@ -119,17 +131,23 @@ class SearchHTMLScraper(HTMLParser):
 
     def handle_data(self, data):
 
-        if self.text_found == self.TITLE_FOUND:
+        if self.text_found == self.CATEGORY_FOUND:
             self.item = {}
             self.item['title'] = data
             self.item['results'] = [ ]
             self.text_found = self.RESULT_LOOKING
 
+        if self.text_found == self.TITLE_FOUND:
+            if 'title' in self.item_result['result']:
+                self.item_result['result']['title'] += data.rstrip()
+            else:
+                self.item_result['result']['title'] = data.rstrip()
+
         if self.text_found == self.RESULT_FOUND:
-            self.text_found = self.RESULT_LOOKING
-            self.item_result['result']['title'] = data
+            self.item_result['result']['Speaker'] = data
             self.item['results'].append(self.item_result)
             self.item_result = None
+            self.text_found = self.RESULT_LOOKING
 
         if self.text_found == self.RESET:
             self.options.append(self.item)
@@ -188,8 +206,8 @@ def get_url(**kwargs):
 
 def list_libraries():
     url = get_url(action='search')
-    item = xbmcgui.ListItem(label="Search Videos")
-    xbmcplugin.addDirectoryItem(_kodihandle, url, item, False)
+    item = xbmcgui.ListItem(label=" Search Videos")
+    xbmcplugin.addDirectoryItem(_kodihandle, url, item, True)
     libs = API(url_library_all)
     for lib in libs:
         item = xbmcgui.ListItem(label=lib['Name'])
@@ -249,21 +267,6 @@ def list_channel(channelId):
     xbmcplugin.endOfDirectory(_kodihandle)
 
 
-def searchDialogProcess(options):
-    select_options = []
-    if len(options) > 0:
-        for i in range(0,len(options)):
-            select_options.append(options[i]['title'])
-        item_selected = xbmcgui.Dialog().select("Search results",list = select_options)
-        select_options = []
-        for i in range(len(options[item_selected]['results'])):
-            select_options.append(options[item_selected]['results'][i]['result']['title'])
-        result_selected = xbmcgui.Dialog().select("Search results",list = select_options)
-        content_id = re.search(".+/([0-9]+)",options[item_selected]['results'][result_selected]['result']['url']).group(1)
-        play_web_session(url_web_base + options[item_selected]['results'][result_selected]['result']['url'],int(content_id))
-    else:
-        xbmcgui.Dialog().ok("Status","Sorry no search results found")
-
 def search(string,_handle):
     global sessionInstance
     sessionInstance.readCookie()
@@ -272,22 +275,54 @@ def search(string,_handle):
     dom = sessionInstance.makeRequest(url_web_base + "/Search?q=" + string,None,True,HEADERSFORWEB)
     parser = SearchHTMLScraper(_handle)
     parser.feed(dom.text.encode("utf8"))
-    searchDialogProcess(parser.get_menu_options())
+    options=parser.get_menu_options()
+    if len(options) > 0:
+        for i in range(0,len(options)):
+            for j in range(0,len(options[i]['results'])):
+                if options[i]['results'][j] is None:
+                    continue
+                content = options[i]['results'][j]['result']
+                name = content['title']
+                content_id = re.search(".+/([0-9]+)",content['url']).group(1)
+                url = get_url(action='content', content=content_id)
+                item = xbmcgui.ListItem(label=name)
+                art = {}
+                if 'ImgUrl' in content:
+                    art['thumb'] = content['ImgUrl']
+
+                item.setArt(art)
+
+                info = {}
+                if 'Summary' in content:
+                    info['plot'] = content['Summary']
+                if 'Publisher' in content and type(content['Publisher']) is dict and 'Name' in content['Publisher']:
+                    info['studio'] = content['Publisher']['Name']
+                if 'Speaker' in content:
+                    info['artist'] = [ content['Speaker'] ]
+                    info['plot'] = content['Speaker']
+
+                item.setInfo('video', info)
+                is_folder = True
+                xbmcplugin.addDirectoryItem(_handle, url, item, is_folder)
+        xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+        xbmcplugin.endOfDirectory(_handle)
+    else:
+        xbmcgui.Dialog().ok("Status","Sorry no search results found")
 
 
 def search_content():
-    global _kodihandle
+    #global _kodihandle
     search_str = ""
     keyboard = xbmc.Keyboard(search_str,'Search')
 
     keyboard.doModal()
     if (keyboard.isConfirmed() == False):
-        return
+        return None
     search_str = keyboard.getText()   #.replace(' ','+')  # sometimes you need to replace spaces with + or %20
     if len(search_str) == 0:
-        return
+        return None
     else:
-        search(search_str, _kodihandle)
+        return search(search_str, _kodihandle)
 
 
 def list_content(contentId):
@@ -489,7 +524,7 @@ def router(paramstring):
     :param paramstring: URL encoded plugin paramstring
     :type paramstring: str
     """
-    log(paramstring)
+    #log(paramstring)
     # Parse a URL-encoded paramstring to the dictionary of
     # {<parameter>: <value>} elements
     params = dict(parse_qsl(paramstring))
@@ -505,7 +540,9 @@ def router(paramstring):
         elif params['action'] == 'content':
             list_content(params['content'])
         elif params['action'] == 'search':
-            search_content()
+            ret = search_content()
+	    if ret is not None:
+                url = get_url(ret)
         elif params['action'] == 'search_items':
             search_content(params['search'])
         elif params['action'] == 'play':
