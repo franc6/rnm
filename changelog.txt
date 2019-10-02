@@ -5,3 +5,4 @@
 1.0.4 Updated Content ID to error out if content id is missing
 1.1.0 Got custom libraries working. Minor bug fixes - cdjc
 1.1.1 Fixed login - TOM
+1.1.2 Mostly fixed search - TOM
